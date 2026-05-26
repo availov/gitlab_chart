@@ -56,6 +56,46 @@ python gitlab_chart.py --token $TOKEN --group myorg --days 14 --user alice
 
 A PNG file is saved to the output directory named `<timestamp>_dashboard.png`.
 
+---
+
+## mr_review_chart.py — MR review heat map
+
+A second script that shows which open MRs need attention right now.
+
+It fetches all currently **open** MRs from a group and renders a three-panel PNG:
+
+- **Hot MRs** — most actively commented, bar length = comment count. Useful to spot MRs stuck in a long discussion.
+- **Cold MRs** — open the longest with little activity (comments ≤ median), bar length = days open. These are the forgotten ones.
+- **Top authors by avg review age** — whose MRs typically sit in review the longest before being merged.
+
+![MR review example](docs/mr_review_example.png)
+
+### Usage
+
+```
+python mr_review_chart.py \
+  --url https://gitlab.com \
+  --token <your-token> \
+  --group my-org/my-group \
+  --days 90 \
+  --top-n 10 \
+  --output ./charts
+```
+
+### Arguments
+
+| Argument | Default | Description |
+|---|---|---|
+| `--url` | `https://gitlab.com` | GitLab instance URL |
+| `--token` | — | Personal access token (required) |
+| `--group` | — | Group path or numeric ID (required) |
+| `--days` | `0` | Look back N days (`0` = all open MRs regardless of age) |
+| `--top-n` | `10` | Rows shown in each panel |
+| `--output` | `gitlab_charts` | Directory for saved images |
+| `--include-subgroups` | `true` | Include MRs from subgroups |
+
+Output file: `<timestamp>_mr_review_heat.png`.
+
 ## License
 
 GPL-3.0
