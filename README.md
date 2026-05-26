@@ -84,15 +84,16 @@ python mr_review_chart.py \
 
 ### Arguments
 
-| Argument | Default | Description |
-|---|---|---|
+| Argument | Default              | Description |
+|---|----------------------|---|
 | `--url` | `https://gitlab.com` | GitLab instance URL |
-| `--token` | — | Personal access token (required) |
-| `--group` | — | Group path or numeric ID (required) |
-| `--days` | `0` | Look back N days (`0` = all open MRs regardless of age) |
-| `--top-n` | `10` | Rows shown in each panel |
-| `--output` | `gitlab_charts` | Directory for saved images |
-| `--include-subgroups` | `true` | Include MRs from subgroups |
+| `--token` | —                    | Personal access token (required) |
+| `--group` | —                    | Group path or numeric ID (required) |
+| `--days` | `0`                  | Look back N days (`0` = all open MRs regardless of age) |
+| `--top-n` | `15`                 | Rows shown in hot/cold MR panels |
+| `--top-authors` | `25`                 | Rows shown in the review age authors chart |
+| `--output` | `gitlab_charts`      | Directory for saved images |
+| `--include-subgroups` | `true`               | Include MRs from subgroups |
 
 Output file: `<timestamp>_mr_review_heat.png`.
 

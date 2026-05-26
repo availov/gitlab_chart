@@ -31,7 +31,8 @@ def main():
         '--days', type=int, default=0,
         help='Look back N days for open MRs (0 = all open MRs)',
     )
-    parser.add_argument('--top-n', type=int, default=10, help='Rows in each panel')
+    parser.add_argument('--top-n', type=int, default=15, help='Rows in hot/cold MR panels')
+    parser.add_argument('--top-authors', type=int, default=25, help='Rows in the review age authors chart')
     parser.add_argument('--output', default='gitlab_charts', help='Output directory')
     parser.add_argument('--include-subgroups', action='store_true', default=True)
     args = parser.parse_args()
@@ -82,11 +83,47 @@ def main():
 
     df = pd.DataFrame(data).sort_values('age_hours', ascending=False).reset_index(drop=True)
 
+    # Fetch merged + closed MRs for author stats (actual review time)
+    hist_days = args.days if args.days > 0 else 90
+    hist_since = (datetime.now() - timedelta(days=hist_days)).isoformat()
+    print(f'\nFetching merged/closed MRs from last {hist_days} days for author stats...')
+
+    hist_data = []
+    for state in ('merged', 'closed'):
+        hist_mrs = group.mergerequests.list(
+            state=state,
+            created_after=hist_since,
+            per_page=100,
+            iterator=True,
+            include_subgroups=args.include_subgroups,
+        )
+        for mr in hist_mrs:
+            created_at = parse_dt(mr.created_at)
+            end_str = getattr(mr, 'merged_at', None) or getattr(mr, 'closed_at', None)
+            end_dt = parse_dt(end_str) if end_str else now
+            age_days = (end_dt - created_at).total_seconds() / 86400
+            author = mr.author['username'] if mr.author else 'unknown'
+            hist_data.append({
+                'iid': mr.iid,
+                'title': mr.title,
+                'author': author,
+                'project': extract_project_slug(mr.web_url),
+                'age_days': age_days,
+                'comments': getattr(mr, 'user_notes_count', 0) or 0,
+                'state': state,
+            })
+
+    print(f'Merged/closed MRs fetched: {len(hist_data)}')
+
+    hist_df = pd.DataFrame(hist_data) if hist_data else pd.DataFrame(
+        columns=['iid', 'title', 'author', 'project', 'age_days', 'comments', 'state']
+    )
+
     output_dir = Path(args.output)
     output_dir.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M')
 
-    _save_review_dashboard(df, group.full_name, args, output_dir, timestamp)
+    _save_review_dashboard(df, hist_df, group.full_name, args, output_dir, timestamp)
 
 
 def _mr_label(row) -> str:
@@ -115,7 +152,7 @@ def _barh(ax, plot_df, x_col, colors, xlabel, title, ref_lines=None):
     ax.grid(axis='x', color='white', linewidth=0.8)
 
 
-def _save_review_dashboard(df, group_name, args, output_dir, timestamp):
+def _save_review_dashboard(df, hist_df, group_name, args, output_dir, timestamp):
     top_n = args.top_n
 
     # Hot MRs: most commented, bar length = comment count
@@ -130,13 +167,21 @@ def _save_review_dashboard(df, group_name, args, output_dir, timestamp):
     cold_norm = cold['age_days'] / cold['age_days'].max() if cold['age_days'].max() > 0 else pd.Series(0.4, index=cold.index)
     cold_colors = [cm.Blues(0.3 + 0.6 * v) for v in cold_norm]
 
-    # Authors: avg review age
+    # Author stats: open MRs (age = time waiting) + merged/closed (age = actual review time)
+    open_ages = df[['author', 'age_days', 'comments', 'iid']].copy()
+    open_ages['state'] = 'opened'
+    if not hist_df.empty:
+        combined = pd.concat([open_ages, hist_df[['author', 'age_days', 'comments', 'iid', 'state']]], ignore_index=True)
+    else:
+        combined = open_ages
+
+    hist_days = args.days if args.days > 0 else 90
     author_stats = (
-        df.groupby('author')
+        combined.groupby('author')
         .agg(avg_age_days=('age_days', 'mean'), mr_count=('iid', 'count'), total_comments=('comments', 'sum'))
         .reset_index()
         .sort_values('avg_age_days', ascending=False)
-        .head(top_n)
+        .head(args.top_authors)
         .reset_index(drop=True)
     )
     author_plot = author_stats.iloc[::-1].reset_index(drop=True)
@@ -146,7 +191,7 @@ def _save_review_dashboard(df, group_name, args, output_dir, timestamp):
     fig.patch.set_facecolor('#f8f8f8')
     period_str = 'all time' if args.days == 0 else f'last {args.days} days'
     fig.suptitle(
-        f'GitLab MR Review — {group_name}  |  {datetime.now().strftime("%d.%m.%Y")}  |  {period_str}  |  {len(df)} open MRs',
+        f'GitLab Arena!   {group_name}  |  {datetime.now().strftime("%d.%m.%Y")}  |  {period_str}  |  {len(df)} open MRs',
         fontsize=15,
         fontweight='bold',
     )
@@ -201,7 +246,10 @@ def _save_review_dashboard(df, group_name, args, output_dir, timestamp):
     ax_authors.set_yticks(y2)
     ax_authors.set_yticklabels(author_plot['author'], fontsize=10)
     ax_authors.set_xlabel('Avg review age (days)', fontsize=10)
-    ax_authors.set_title(f'Top {len(author_plot)} authors by avg review age', fontsize=11, pad=8)
+    ax_authors.set_title(
+        f'Top {len(author_plot)} authors by avg review age\n(open + merged/closed, last {hist_days}d)',
+        fontsize=11, pad=8,
+    )
     ax_authors.set_facecolor('#f2f2f2')
     ax_authors.grid(axis='x', color='white', linewidth=0.8)
 
